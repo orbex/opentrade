@@ -49,7 +49,8 @@ exports.CloseOrder = function(req, res)
             g_constants.dbTables['balance'].selectAll('*', WHERE_BALANCE, '', (err, rows) => {
                 if (err || !rows || !rows.length)
                     return onError(req, res, err.message || 'Balance not found');
-
+                
+                const oldBalance = rows.length ? rows[0].balance*1 : 0.0;
                 const newBalance = (rows[0].balance*1 + fullAmount).toFixed(7)*1;
                 
                 if (!utils.isNumeric(newBalance)) return onError(req, res, 'Balance is not numeric ('+newBalance+')');
@@ -66,7 +67,13 @@ exports.CloseOrder = function(req, res)
                                 return onError(req, res, err.message || 'Database Delete error');
                             }
                             
-                            g_constants.dbTables['balance'].update('balance="'+newBalance+'"', WHERE_BALANCE, err => {
+////////
+                            let commentJSON = [{amount: newBalance-oldBalance, time: Date.now(), action: 'ret', balanceOld: oldBalance, balanceNew: newBalance}];
+                     
+                            let historyStr = "";
+                            try {historyStr = JSON.stringify(JSON.parse(unescape(rows[0].history || {})).concat(JSON.stringify(commentJSON)));} catch(e){};
+/////////
+                            g_constants.dbTables['balance'].update('balance="'+newBalance+'", history="'+escape(historyStr)+'"', WHERE_BALANCE, err => {
                                 if (err)
                                 {
                                     database.RollbackTransaction();
@@ -108,7 +115,7 @@ exports.SubmitOrder = function(req, res)
             if (err && err.result == false) return onError(req, res, err.message);
 
             const WHERE = req.body.order == 'buy' ? 
-                'coin="'+escape(g_constants.TRADE_MAIN_COIN)+'" AND userID="'+status.id+'"' :
+                'coin="'+escape(g_constants.share.TRADE_MAIN_COIN)+'" AND userID="'+status.id+'"' :
                 'coin="'+escape(req.body.coin)+'" AND userID="'+status.id+'"';
             
             g_constants.dbTables['balance'].selectAll('*', WHERE, '', (err, rows) => {
@@ -125,7 +132,9 @@ exports.SubmitOrder = function(req, res)
                 if (!IsValidBalance(rows[0].balance*1-fullAmount)) return onError(req, res, 'Insufficient funds ( '+rows[0].balance*1+' < '+fullAmount+' )');
 
                 if (rows[0].balance*1 < fullAmount) return onError(req, res, 'Insufficient funds ( '+rows[0].balance*1+' < '+fullAmount+' )');
-
+                
+                req['balanceData'] = rows[0];
+                
                 AddOrder(status, WHERE, rows[0].balance*1-fullAmount, req, res);
             });
         });
@@ -145,7 +154,7 @@ function IsValidBalance(balance)
 
 exports.GetReservedBalance = function(userID, coinName, callback)
 {
-    if (coinName != g_constants.TRADE_MAIN_COIN)
+    if (coinName != g_constants.share.TRADE_MAIN_COIN)
     {
         g_constants.dbTables['orders'].selectAll('SUM(amount) AS result', 'userID="'+userID+'" AND coin="'+coinName+'" '+'AND buysell="sell"', '', (err, rows) => {
             if (err || !rows) return callback({result: 'fail', message: err.message || 'Database error'});
@@ -194,7 +203,7 @@ let g_GetAllOrders_start = false;
 exports.GetAllOrders = function(coinsOrigin, callback)
 {
     let coins = [coinsOrigin[0], coinsOrigin[1]];
-    if (unescape(coins[0].name) == g_constants.TRADE_MAIN_COIN)
+    if (unescape(coins[0].name) == g_constants.share.TRADE_MAIN_COIN)
         coins = [coinsOrigin[1], coinsOrigin[0]];
     
     const coin0 = unescape(coins[0].name);
@@ -289,7 +298,7 @@ function AddOrder(status, WHERE, newBalance, req, res)
                 req.body.order,
                 amount.toFixed(8),
                 price.toFixed(8),
-                g_constants.TRADE_MAIN_COIN,
+                g_constants.share.TRADE_MAIN_COIN,
                 Date.now(),
                 JSON.stringify({}),
                 uuid,
@@ -301,7 +310,15 @@ function AddOrder(status, WHERE, newBalance, req, res)
                         return;
                     }
                     
-                    g_constants.dbTables['balance'].update('balance="'+balance+'"', WHERE, err => {
+                    const oldBalance = req['balanceData'].balance*1 || 0.0;
+////////
+                    let commentJSON = [{amount: balance-oldBalance, time: Date.now(), action: 'order', balanceOld: oldBalance, balanceNew: balance}];
+             
+                    let historyStr = "";
+                    try {historyStr = JSON.stringify(JSON.parse(unescape(req['balanceData'].history || {})).concat(JSON.stringify(commentJSON)));} catch(e){};
+/////////
+                    
+                    g_constants.dbTables['balance'].update('balance="'+balance+'", history="'+escape(historyStr)+'"', WHERE, err => {
                         if (err)
                         {
                             database.RollbackTransaction();
@@ -527,31 +544,33 @@ function ProcessExchange(data)
 
 exports.AddBalance = function(userID, count, coin, callback)
 {
-    if (count*1.0 == 0.0 || !utils.isNumeric(count))
-    {
-        callback(null);
-        return;
-    }
-    
+    if (count*1.0 == 0.0) return callback(null); //No need update balance
+    if (!utils.isNumeric(count)) return callback(1); //Fatal error need rollback transaction
+
     const WHERE = 'userID="'+userID+'" AND coin="'+coin+'"';
     g_constants.dbTables['balance'].selectAll('*', WHERE, '', (err, rows) => {
-        if (err || !rows) return callback(err);
+        if (err || !rows) return callback(1); //Fatal error need rollback transaction
         
+        const oldBalance = rows.length ? rows[0].balance*1 : 0.0;
         const newBalance = rows.length ? rows[0].balance*1 + count*1 : count;
         
         const balance = (newBalance*1).toFixed(8)*1;
-        if (!utils.isNumeric(balance)) return callback(null);
-        
+        if (!utils.isNumeric(balance)) return callback(1); //Fatal error need rollback transaction
+////////
+        let commentJSON = [{amount: balance-oldBalance, time: Date.now(), action: 'add', balanceOld: oldBalance, balanceNew: balance}];
+ 
+        let historyStr = "";
+        try {historyStr = JSON.stringify(JSON.parse(unescape(rows[0].history || {})).concat(JSON.stringify(commentJSON)));} catch(e){};
+
+/////////
         if (rows.length)
-        {
-            g_constants.dbTables['balance'].update('balance="'+balance+'"', WHERE, callback);
-            return;
-        }
+            return g_constants.dbTables['balance'].update('balance="'+balance+'", history="'+escape(historyStr)+'"', WHERE, callback);
+
         g_constants.dbTables['balance'].insert(
             userID,
             unescape(coin),
             balance,
-            JSON.stringify({}),
+            JSON.stringify(commentJSON),
             JSON.stringify({}),
             callback
         );

@@ -1,28 +1,28 @@
 'use strict';
 
-//exports.FATAL_ERROR = true;
+exports.DEBUG_LOG = true;
 
-exports.TRADE_MAIN_COIN = "Marycoin";
-exports.TRADE_MAIN_COIN_TICKER = "MC";
-exports.TRADE_DEFAULT_PAIR = "Litecoin";
+exports.share = {
+   tradeEnabled: false,
+   recaptchaEnabled: false,
+   
+   my_portSSL: 40443,
+   
+   TRADE_MAIN_COIN: "Marycoin",
+   TRADE_MAIN_COIN_TICKER: "MC",
+   TRADE_DEFAULT_PAIR: "Litecoin"
+};
+
 exports.TRADE_COMISSION = 0.001;
 
 exports.NOREPLY_EMAIL = 'no-reply@multicoins.org';
 exports.SUPPORT_EMAIL = 'ivanivanovkzv@gmail.com';
-exports.my_portSSL = 40443;
 
 exports.my_port = process.env.PORT || 40080;
 
 exports.SESSION_TIME = 3600*1000; //one hour
 
-exports.dbName = './database/sqlite.db';
-
-exports.share = {
-   tradeEnabled: false,
-   recaptchaEnabled: false
-};
-exports.tradeEnabled = false;
-exports.recaptchaEnabled = false;
+const DashForks = ['DASH', 'WAVI'];
 
 exports.recaptcha_pub_key = "6LeX5SQUAAAAAKTieM68Sz4MECO6kJXsSR7_sGP1";
 
@@ -141,15 +141,20 @@ exports.dbTables = [
         ],
         'commands' : 'FOREIGN KEY(coin, coin_pair) REFERENCES coins(name, name)'
    },
-/*   {
-       'name' : 'tx_journal',
+   {
+       'name' : 'referals',
        'cols' : [
-           ['from_to', 'TEXT UNIQUE PRIMARY KEY'],
-           ['amount', 'TEXT'],
-           ['status', 'TEXT'],
-           ['comment', 'TEXT']
-        ]
-   }*/
+           ['userFrom', 'TEXT'],
+           ['pageFrom', 'TEXT'],
+           ['IP', 'TEXT'],
+           ['timeIn', 'TEXT'],
+           ['timeReg', 'TEXT'],
+           ['userRegID', 'TEXT UNIQUE'],
+           ['history', 'TEXT'],
+           ['uid', 'TEXT UNIQUE']
+        ],
+        'commands': 'PRIMARY KEY (userRegID, uid)'
+   }
 ];
 
 exports.dbIndexes = [
@@ -177,6 +182,8 @@ exports.ExchangeBalanceAccountID = 0;
 
 exports.Roles = ['Administrator', 'Support', 'User'];
 
+exports.dbName = './database/sqlite.db';
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Private constants
 const PRIVATE = require("./modules/private_constants");
@@ -200,3 +207,11 @@ exports.SSL_options = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////////
+
+exports.IsDashFork = function(name)
+{
+    for (let i=0; i<DashForks.length; i++)
+        if (name == DashForks[i])
+            return true;
+    return false;
+}

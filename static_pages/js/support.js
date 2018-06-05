@@ -7,6 +7,7 @@ $(() => {
             return;
         onSubmit();
     });
+    
 });
 
 function validate()
@@ -26,10 +27,11 @@ function validate()
 function onSubmit()
 {
     $('#loader').show();
+    $("html, body").animate({ scrollTop: 0 }, "slow");
     $.post( "/support", $( '#support-form' ).serialize(), function( data ) {
         $('#loader').hide();
 
-        grecaptcha.reset();
+        if (grecaptcha) grecaptcha.reset();
         if (data.result != true)
         {
             //$('#alert-fail').text(data.message);
@@ -43,3 +45,4 @@ function onSubmit()
         $('id_firststep').hide();
     }, "json" );
 }
+
